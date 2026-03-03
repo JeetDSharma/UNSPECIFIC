@@ -126,23 +126,38 @@ class QualityEvaluator:
                 if start == -1:
                     return None, None
                 
-                next_categories = ["grammar", "coherence", "likability", "overall"]
-                next_categories = [c for c in next_categories if c != category_name.lower()]
+                next_categories = ["grammar:", "coherence:", "likability:", "overall winner:"]
+                next_categories = [c for c in next_categories if not c.startswith(category_name.lower())]
                 next_idxs = [txt_lower.find(c, start+1) for c in next_categories]
                 next_idxs = [i for i in next_idxs if i != -1]
                 end = min(next_idxs) if next_idxs else len(txt)
                 seg = txt[start:end]
                 
-                # Pattern: "A - 4/5" or "A: 4/5" or "A - 4"
-                ma = re.search(r'A\s*[-:]\s*([0-9]+)(?:\s*/\s*[0-9]+)?', seg, re.IGNORECASE)
-                mb = re.search(r'B\s*[-:]\s*([0-9]+)(?:\s*/\s*[0-9]+)?', seg, re.IGNORECASE)
+                # Pattern: "A - 4/5" or "A: 4/5" or "A - 4" or "A - 3.5/5"
+                # Look for lines that are ONLY the score (not "Issues in A:")
+                # Match: newline/start, optional whitespace, A/B, whitespace, dash/colon, number
+                lines = seg.split('\n')
+                score_a = None
+                score_b = None
                 
-                if ma and mb:
-                    return float(ma.group(1)), float(mb.group(1))
+                for line in lines:
+                    line_stripped = line.strip()
+                    # Match lines like "A - 4/5" or "A: 3.5/5" but not "Issues in A:"
+                    if re.match(r'^A\s*[-:]\s*([0-9]+(?:\.[0-9]+)?)(?:\s*/\s*[0-9]+)?\s*$', line_stripped, re.IGNORECASE):
+                        match = re.match(r'^A\s*[-:]\s*([0-9]+(?:\.[0-9]+)?)(?:\s*/\s*[0-9]+)?\s*$', line_stripped, re.IGNORECASE)
+                        if match:
+                            score_a = float(match.group(1))
+                    elif re.match(r'^B\s*[-:]\s*([0-9]+(?:\.[0-9]+)?)(?:\s*/\s*[0-9]+)?\s*$', line_stripped, re.IGNORECASE):
+                        match = re.match(r'^B\s*[-:]\s*([0-9]+(?:\.[0-9]+)?)(?:\s*/\s*[0-9]+)?\s*$', line_stripped, re.IGNORECASE)
+                        if match:
+                            score_b = float(match.group(1))
+                
+                if score_a is not None and score_b is not None:
+                    return score_a, score_b
                 
                 return None, None
             
-            gA, gB = extract_scores_for("Grammar")
+            # gA, gB = extract_scores_for("Grammar")
             cA, cB = extract_scores_for("Coherence")
             lA, lB = extract_scores_for("Likability")
             
@@ -151,25 +166,25 @@ class QualityEvaluator:
                 match = re.search(pattern, txt, re.IGNORECASE | re.DOTALL)
                 return match.group(1).upper() if match else None
             
-            grammar_pref = extract_pref("Grammar")
+            # grammar_pref = extract_pref("Grammar")
             coherence_pref = extract_pref("Coherence")
             likability_pref = extract_pref("Likability")
             
             overall_match = re.search(r'Overall\s+Winner:\s*([AB])', txt, re.IGNORECASE)
             overall_pref = overall_match.group(1).upper() if overall_match else None
             
-            if all(v is None for v in (gA, gB, cA, cB, lA, lB)):
+            if all(v is None for v in (cA, cB, lA, lB)):
                 self.logger.error("Parse failure: no numeric scores found")
                 return None
             
             parsed = {
-                'grammar_score_a': float(gA) if gA is not None else 0.0,
-                'grammar_score_b': float(gB) if gB is not None else 0.0,
+                # 'grammar_score_a': float(gA) if gA is not None else 0.0,
+                # 'grammar_score_b': float(gB) if gB is not None else 0.0,
                 'coherence_score_a': float(cA) if cA is not None else 0.0,
                 'coherence_score_b': float(cB) if cB is not None else 0.0,
                 'likability_score_a': float(lA) if lA is not None else 0.0,
                 'likability_score_b': float(lB) if lB is not None else 0.0,
-                'grammar_pref': grammar_pref or '',
+                # 'grammar_pref': grammar_pref or '',
                 'coherence_pref': coherence_pref or '',
                 'likability_pref': likability_pref or '',
                 'overall_pref': overall_pref or ''
@@ -309,13 +324,13 @@ class QualityEvaluator:
                         result_row.update(parsed)
                     else:
                         result_row.update({
-                            "grammar_score_a": 0.0,
-                            "grammar_score_b": 0.0,
+                            # "grammar_score_a": 0.0,
+                            # "grammar_score_b": 0.0,
                             "coherence_score_a": 0.0,
                             "coherence_score_b": 0.0,
                             "likability_score_a": 0.0,
                             "likability_score_b": 0.0,
-                            "grammar_pref": "",
+                            # "grammar_pref": "",
                             "coherence_pref": "",
                             "likability_pref": "",
                             "overall_pref": ""
@@ -340,13 +355,13 @@ class QualityEvaluator:
                         "content_comparison": comp_content,
                         "constraints_comparison": comp_constraints,
                         "order": 0,
-                        "grammar_score_a": 0.0,
-                        "grammar_score_b": 0.0,
+                        # "grammar_score_a": 0.0,
+                        # "grammar_score_b": 0.0,
                         "coherence_score_a": 0.0,
                         "coherence_score_b": 0.0,
                         "likability_score_a": 0.0,
                         "likability_score_b": 0.0,
-                        "grammar_pref": "",
+                        # "grammar_pref": "",
                         "coherence_pref": "",
                         "likability_pref": "",
                         "overall_pref": "",

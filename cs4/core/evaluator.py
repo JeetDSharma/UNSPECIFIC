@@ -109,13 +109,17 @@ class ConstraintEvaluator:
     
     def _extract_satisfaction_count(self, results: str) -> int:
         """Extract the number of satisfied constraints from evaluation results."""
+        # Count actual "Yes" lines - more reliable than LLM's stated count
+        yes_count = len(re.findall(r'^\d+\.\s+Yes', results, re.MULTILINE))
+        if yes_count > 0:
+            return yes_count
+        
+        # Fallback: use LLM's stated count
         match = re.search(r'Number of constraints satisfied:\s*(\d+)', results)
         if match:
             return int(match.group(1))
         
-        # Fallback: count "Yes" occurrences
-        yes_count = len(re.findall(r'^\d+\.\s+Yes', results, re.MULTILINE))
-        return yes_count
+        return 0
     
     def evaluate_batch(
         self,
@@ -126,15 +130,16 @@ class ConstraintEvaluator:
     ) -> pd.DataFrame:
         """
         Evaluate constraint satisfaction for a batch of samples.
+        Preserves all original columns and adds new evaluation columns.
         
         Args:
-            df: Input DataFrame (typically fitted_content.csv)
+            df: Input DataFrame (can be any CSV with content and constraints)
             content_column: Name of column with content to evaluate
             constraints_column: Name of column with constraints
-            output_path: Optional path to save results
+            output_path: Optional path to save results (saved incrementally)
             
         Returns:
-            DataFrame with evaluation results
+            DataFrame with all original columns plus evaluation results
         """
         if content_column not in df.columns:
             raise ValueError(f"Column '{content_column}' not found in DataFrame")
@@ -142,10 +147,8 @@ class ConstraintEvaluator:
             raise ValueError(f"Column '{constraints_column}' not found in DataFrame")
         
         # Check for instruction_number
-        if "instruction_number" in df.columns:
-            has_instruction_num = True
-        else:
-            has_instruction_num = False
+        has_instruction_num = "instruction_number" in df.columns
+        if not has_instruction_num:
             self.logger.warning("No 'instruction_number' column found, using index")
         
         # Check for subset_size column (from bucketed constraints)
@@ -157,13 +160,24 @@ class ConstraintEvaluator:
         
         self.logger.info(f"Evaluating {len(df)} samples")
         
-        results = []
+        # Create a copy to avoid modifying the original
+        result_df = df.copy()
+        
+        # Initialize new columns
+        result_df["satisfaction_results"] = ""
+        result_df["num_satisfied"] = 0
+        result_df["total_constraints"] = 0
+        result_df["satisfaction_rate"] = 0.0
+        result_df["eval_model"] = ""
+        result_df["eval_tokens"] = 0
+        result_df["eval_timestamp"] = ""
+        
         for idx, row in df.iterrows():
             content = row[content_column]
             constraints = row[constraints_column]
             instruction_num = row["instruction_number"] if has_instruction_num else idx + 1
             
-            self.logger.info(f"Evaluating sample #{instruction_num}")
+            self.logger.info(f"Evaluating sample #{instruction_num} (row {idx + 1}/{len(df)})")
             
             try:
                 satisfaction_results, num_satisfied, tokens = self.evaluate_content(
@@ -180,18 +194,13 @@ class ConstraintEvaluator:
                 
                 satisfaction_rate = num_satisfied / total_constraints if total_constraints > 0 else 0.0
                 
-                results.append({
-                    "instruction_number": instruction_num,
-                    "fitted_content": content,
-                    "constraints": constraints,
-                    "satisfaction_results": satisfaction_results,
-                    "num_satisfied": num_satisfied,
-                    "total_constraints": total_constraints,
-                    "satisfaction_rate": satisfaction_rate,
-                    "model_used": self.model,
-                    "tokens_used": tokens,
-                    "timestamp": datetime.now().isoformat()
-                })
+                result_df.at[idx, "satisfaction_results"] = satisfaction_results
+                result_df.at[idx, "num_satisfied"] = num_satisfied
+                result_df.at[idx, "total_constraints"] = total_constraints
+                result_df.at[idx, "satisfaction_rate"] = satisfaction_rate
+                result_df.at[idx, "eval_model"] = self.model
+                result_df.at[idx, "eval_tokens"] = tokens
+                result_df.at[idx, "eval_timestamp"] = datetime.now().isoformat()
                 
             except Exception as e:
                 self.logger.error(
@@ -203,23 +212,21 @@ class ConstraintEvaluator:
                 else:
                     error_total_constraints = len(re.findall(r'^\d+\.', constraints, re.MULTILINE))
                 
-                results.append({
-                    "instruction_number": instruction_num,
-                    "fitted_content": content,
-                    "constraints": constraints,
-                    "satisfaction_results": "",
-                    "num_satisfied": 0,
-                    "total_constraints": error_total_constraints,
-                    "model_used": self.model,
-                    "tokens_used": 0,
-                    "timestamp": datetime.now().isoformat()
-                })
-        
-        result_df = pd.DataFrame(results)
+                result_df.at[idx, "satisfaction_results"] = ""
+                result_df.at[idx, "num_satisfied"] = 0
+                result_df.at[idx, "total_constraints"] = error_total_constraints
+                result_df.at[idx, "satisfaction_rate"] = 0.0
+                result_df.at[idx, "eval_model"] = self.model
+                result_df.at[idx, "eval_tokens"] = 0
+                result_df.at[idx, "eval_timestamp"] = datetime.now().isoformat()
+            
+            # Save incrementally after each row to prevent data loss
+            if output_path:
+                result_df.to_csv(output_path, index=False, encoding="utf-8")
+                self.logger.debug(f"Progress saved (row {idx + 1}/{len(df)})")
         
         if output_path:
-            result_df.to_csv(output_path, index=False, encoding="utf-8")
-            self.logger.info(f"Evaluation results saved to {output_path}")
+            self.logger.info(f"All evaluation results saved to {output_path}")
         
         return result_df
 

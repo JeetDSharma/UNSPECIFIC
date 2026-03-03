@@ -195,10 +195,10 @@ class BaseGenerator:
             self.logger.info(f"Replicated base content across {len(result_df)} rows")
             
         else:
-            # Original behavior for backward compatibility
+            # Original behavior for backward compatibility - preserves all input columns
             self.logger.info(f"Generating base content for {len(df)} tasks")
             
-            results = []
+            base_results = []
             for idx, row in df.iterrows():
                 task = row[task_column]
                 instruction_num = row["instruction_number"] if has_instruction_num else idx + 1
@@ -208,9 +208,8 @@ class BaseGenerator:
                 try:
                     content, tokens = self.generate_base_content(task, log=True)
                     
-                    results.append({
+                    base_results.append({
                         "instruction_number": instruction_num,
-                        "main_task": task,
                         "base_content": content,
                         "content_length": len(content),
                         "model_used": self.model,
@@ -222,9 +221,8 @@ class BaseGenerator:
                     self.logger.error(
                         f"Failed to generate base content for task {instruction_num}: {e}"
                     )
-                    results.append({
+                    base_results.append({
                         "instruction_number": instruction_num,
-                        "main_task": task,
                         "base_content": "",
                         "content_length": 0,
                         "model_used": self.model,
@@ -232,7 +230,24 @@ class BaseGenerator:
                         "timestamp": datetime.now().isoformat()
                     })
             
-            result_df = pd.DataFrame(results)
+            base_df = pd.DataFrame(base_results)
+            
+            # Merge to preserve all original columns from input df
+            if has_instruction_num:
+                result_df = df.merge(
+                    base_df[["instruction_number", "base_content", "content_length", 
+                             "model_used", "tokens_used", "timestamp"]],
+                    on="instruction_number",
+                    how="left"
+                )
+            else:
+                # If no instruction_number, add columns directly (assumes same order)
+                result_df = df.copy()
+                result_df["base_content"] = base_df["base_content"].values
+                result_df["content_length"] = base_df["content_length"].values
+                result_df["model_used"] = base_df["model_used"].values
+                result_df["tokens_used"] = base_df["tokens_used"].values
+                result_df["timestamp"] = base_df["timestamp"].values
         
         if output_path:
             result_df.to_csv(output_path, index=False, encoding="utf-8")

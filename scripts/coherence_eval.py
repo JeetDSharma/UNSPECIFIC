@@ -269,19 +269,53 @@ def main(args):
         logging.info("Saved revised CSV to %s", args.revise_output)
 
 
-    if args.base_path and args.article2_path and args.eval_output:
+    if args.base_path and args.eval_output:
         logging.info("Starting evaluation phase")
         base_df = pd.read_csv(args.base_path, dtype=str, keep_default_na=False)
-        article_df = pd.read_csv(args.article2_path, dtype=str, keep_default_na=False)
-
-
-        n = min(len(base_df), len(article_df))
-        base_df2 = base_df.iloc[:n].reset_index(drop=True).copy()
-        article_df = article_df.iloc[:n].reset_index(drop=True).copy()
-
+        
+        # Single CSV mode: use same CSV for both articles
+        if args.article2_path is None:
+            logging.info("Single CSV mode: using same CSV for both articles")
+            article_df = base_df.copy()
+        else:
+            article_df = pd.read_csv(args.article2_path, dtype=str, keep_default_na=False)
+        
+        # Apply subset filters if specified
+        if args.subset_a is not None:
+            if 'subset_size' not in base_df.columns:
+                raise ValueError("--subset-a requires 'subset_size' column in base CSV")
+            base_df = base_df[base_df['subset_size'].astype(str) == str(args.subset_a)].copy()
+            logging.info(f"Filtered base_df to subset_size={args.subset_a}, {len(base_df)} rows")
+        
+        if args.subset_b is not None:
+            if 'subset_size' not in article_df.columns:
+                raise ValueError("--subset-b requires 'subset_size' column in article CSV")
+            article_df = article_df[article_df['subset_size'].astype(str) == str(args.subset_b)].copy()
+            logging.info(f"Filtered article_df to subset_size={args.subset_b}, {len(article_df)} rows")
+        
+        # Align by instruction_number if available in both DataFrames
+        if 'instruction_number' in base_df.columns and 'instruction_number' in article_df.columns:
+            logging.info("Aligning by instruction_number")
+            base_df = base_df.sort_values('instruction_number').reset_index(drop=True)
+            article_df = article_df.sort_values('instruction_number').reset_index(drop=True)
+            
+            # Merge on instruction_number to ensure proper alignment
+            base_df['_idx'] = base_df['instruction_number']
+            article_df['_idx'] = article_df['instruction_number']
+            merged = pd.merge(base_df, article_df[['_idx', args.eval_article]], 
+                            on='_idx', suffixes=('', '_article2'))
+            base_df2 = merged.drop('_idx', axis=1)
+            n = len(base_df2)
+            logging.info(f"Aligned {n} rows by instruction_number")
+        else:
+            # Fallback to index-based alignment
+            logging.info("Aligning by index (no instruction_number found)")
+            n = min(len(base_df), len(article_df))
+            base_df2 = base_df.iloc[:n].reset_index(drop=True).copy()
+            article_df = article_df.iloc[:n].reset_index(drop=True).copy()
+            base_df2[args.eval_article] = article_df[args.eval_article].values
+        
         results_df = base_df2.copy()
-       
-        results_df[args.eval_article] = article_df[args.eval_article].values
 
         cols = [
             "grammar_score_A", "grammar_score_B",
@@ -356,11 +390,15 @@ if __name__ == "__main__":
 
     # evaluation inputs
     p.add_argument("--base-path", type=str, help="CSV with base/revised articles")
-    p.add_argument("--article2-path", type=str, help="CSV with articles to compare")
+    p.add_argument("--article2-path", type=str, help="CSV with articles to compare (optional if using single CSV mode)")
     p.add_argument("--eval-output", type=str, help="CSV to write pairwise evaluation results")
-    p.add_argument("--eval-article", type=str)
-    p.add_argument("--base-col-eval", type=str)
+    p.add_argument("--eval-article", type=str, help="Column name for article B")
+    p.add_argument("--base-col-eval", type=str, help="Column name for article A")
     p.add_argument("--eval-model", type=str, default="gpt-4o-mini")
+    
+    # single CSV mode options
+    p.add_argument("--subset-a", type=int, help="Filter base_path to subset_size value for article A")
+    p.add_argument("--subset-b", type=int, help="Filter article2_path (or base_path) to subset_size value for article B")
 
     args = p.parse_args()
     main(args)
