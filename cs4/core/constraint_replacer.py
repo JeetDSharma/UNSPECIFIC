@@ -44,17 +44,15 @@ class ConstraintReplacer:
         main_task: str,
         original_constraints: str,
         base_content: str,
-        satisfaction_results: str,
         log: bool = True
     ) -> Tuple[str, str, int]:
         """
-        Replace satisfied constraints with harder ones.
+        Replace easy constraints with harder ones.
         
         Args:
             main_task: Main task description
             original_constraints: Original 39 constraints
             base_content: Base story/blog content
-            satisfaction_results: Evaluation results showing which are satisfied
             log: Whether to log token usage
             
         Returns:
@@ -63,8 +61,7 @@ class ConstraintReplacer:
         prompt = get_constraint_replacement_prompt(
             main_task=main_task,
             original_constraints=original_constraints,
-            base_content=base_content,
-            satisfaction_results=satisfaction_results
+            base_content=base_content
         )
         
         for attempt in range(1, self.retry_attempts + 1):
@@ -125,7 +122,6 @@ class ConstraintReplacer:
         self,
         constraints_df: pd.DataFrame,
         base_df: pd.DataFrame,
-        evaluation_df: pd.DataFrame,
         output_path: Optional[str] = None
     ) -> pd.DataFrame:
         """
@@ -134,14 +130,12 @@ class ConstraintReplacer:
         Args:
             constraints_df: Original constraints (from common_constraints.csv)
             base_df: Base content (from base_generated.csv)
-            evaluation_df: Evaluation results (from base_evaluation.csv)
             output_path: Optional path to save results
             
         Returns:
             DataFrame with revised constraints
         """
         merged = pd.merge(constraints_df, base_df, on="instruction_number", suffixes=("_constraint", "_base"))
-        merged = pd.merge(merged, evaluation_df, on="instruction_number", suffixes=("", "_eval"))
         
         self.logger.info(f"Replacing constraints for {len(merged)} samples")
         
@@ -152,8 +146,6 @@ class ConstraintReplacer:
             main_task = row.get("main_task_constraint", row.get("main_task", ""))
             original_constraints = row["constraints"]
             base_content = row["base_content"]
-            satisfaction_results = row["satisfaction_results"]
-            
             self.logger.info(f"Processing sample #{instruction_num}")
             
             try:
@@ -161,7 +153,6 @@ class ConstraintReplacer:
                     main_task=main_task,
                     original_constraints=original_constraints,
                     base_content=base_content,
-                    satisfaction_results=satisfaction_results,
                     log=True
                 )
                 

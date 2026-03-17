@@ -232,6 +232,65 @@ def find_dissimilar_pairs_distinct(
     return pairs
 
 
+def find_similar_pairs_distinct(
+    sentences, 
+    embeddings, 
+    max_pairs=25, 
+    similarity_lower=0.70, 
+    similarity_upper=0.85
+):
+    """Find similar pairs ensuring all pairs are distinct (no blog appears in multiple pairs)"""
+    print("Finding similar pairs (distinct pairs only)...")
+    
+    # Normalize embeddings
+    normalized_embeddings = embeddings / np.linalg.norm(embeddings, axis=1)[:, None]
+
+    pairs = []
+    used_ids = set()  # Track which blog IDs have been used in pairs
+
+    for i in tqdm(range(len(sentences))):
+        if len(pairs) >= max_pairs:
+            break
+        if i in used_ids:
+            continue
+
+        # Sample candidates from unused IDs only
+        available_candidates = [j for j in range(i + 1, len(sentences)) if j not in used_ids]
+        if not available_candidates:
+            continue
+            
+        candidates = np.random.choice(
+            available_candidates,
+            size=min(50, len(available_candidates)),
+            replace=False
+        )
+        
+        for idx2 in candidates:
+            # Compute similarity
+            similarity = float(np.dot(normalized_embeddings[i], normalized_embeddings[idx2]))
+            
+            # Check if similarity is within the similar range
+            if similarity_lower <= similarity <= similarity_upper:
+                pairs.append({
+                    'blog_1_id': i,
+                    'blog_2_id': idx2,
+                    'blog_1_text': sentences[i],
+                    'blog_2_text': sentences[idx2],
+                    'similarity': round(similarity, 3)  # Round to 3 decimals like in notebook
+                })
+                
+                # Mark both IDs as used to ensure distinct pairs
+                used_ids.add(i)
+                used_ids.add(idx2)
+                break
+        
+        if len(pairs) >= max_pairs:
+            break
+
+    print(f"Found {len(pairs)} similar pairs (all distinct)")
+    return pairs
+
+
 def save_pairs_to_csv(pairs, output_path):
     """Save pairs to CSV file without pandas"""
     import csv

@@ -1,1 +1,1 @@
-https://olmo-data.org/dolma-v1_7/falcon-refinedweb-filtered/falcon-0261.json.gz
+https://olmo-data.org/dolma-v1_7/falcon-refinedweb-filtered/falcon-0408.json.gz
