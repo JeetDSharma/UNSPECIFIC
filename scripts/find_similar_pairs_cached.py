@@ -62,7 +62,7 @@ def find_pairs_with_criteria(
             
         candidates = np.random.choice(
             available_candidates,
-            size=min(50, len(available_candidates)),
+            size=min(1000, len(available_candidates)),
             replace=False
         )
         
