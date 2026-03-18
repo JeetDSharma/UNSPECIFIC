@@ -57,6 +57,17 @@ def main():
         default="configs/logging_config.yaml",
         help="Path to logging config"
     )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Use parallel processing for faster execution"
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=5,
+        help="Maximum number of parallel workers (default: 5)"
+    )
     
     args = parser.parse_args()
     
@@ -68,6 +79,9 @@ def main():
     logger.info(f"Constraints: {args.constraints_path}")
     logger.info(f"Base content: {args.base_path}")
     logger.info(f"Output: {args.output_path}")
+    logger.info(f"Processing mode: {'Parallel' if args.parallel else 'Sequential'}")
+    if args.parallel:
+        logger.info(f"Max workers: {args.max_workers}")
     
     try:
         constraints_df = pd.read_csv(args.constraints_path, encoding="utf-8")
@@ -93,11 +107,19 @@ def main():
     )
     
     try:
-        result_df = replacer.replace_batch(
-            constraints_df=constraints_df,
-            base_df=base_df,
-            output_path=args.output_path
-        )
+        if args.parallel:
+            result_df = replacer.replace_batch_parallel(
+                constraints_df=constraints_df,
+                base_df=base_df,
+                output_path=args.output_path,
+                max_workers=args.max_workers
+            )
+        else:
+            result_df = replacer.replace_batch(
+                constraints_df=constraints_df,
+                base_df=base_df,
+                output_path=args.output_path
+            )
         logger.info(f"Successfully replaced constraints for {len(result_df)} samples")
         
         usage = get_total_usage()

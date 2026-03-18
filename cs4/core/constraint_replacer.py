@@ -8,6 +8,7 @@ import re
 from time import sleep
 from typing import Optional, Tuple
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from cs4.core.prompts import get_constraint_replacement_prompt
 from cs4.utils.llm_client import OpenAIClient, AnthropicClient
@@ -181,6 +182,94 @@ class ConstraintReplacer:
                 })
         
         result_df = pd.DataFrame(results)
+        
+        if output_path:
+            result_df.to_csv(output_path, index=False, encoding="utf-8")
+            self.logger.info(f"Revised constraints saved to {output_path}")
+        
+        return result_df
+    
+    def replace_batch_parallel(
+        self,
+        constraints_df: pd.DataFrame,
+        base_df: pd.DataFrame,
+        output_path: Optional[str] = None,
+        max_workers: int = 5
+    ) -> pd.DataFrame:
+        """
+        Replace constraints for a batch of samples using parallel processing.
+        
+        Args:
+            constraints_df: Original constraints (from common_constraints.csv)
+            base_df: Base content (from base_generated.csv)
+            output_path: Optional path to save results
+            max_workers: Maximum number of parallel workers (default: 5)
+            
+        Returns:
+            DataFrame with revised constraints
+        """
+        merged = pd.merge(constraints_df, base_df, on="instruction_number", suffixes=("_constraint", "_base"))
+        
+        self.logger.info(f"Replacing constraints for {len(merged)} samples with {max_workers} parallel workers")
+        
+        results = []
+        completed_count = 0
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_data = {
+                executor.submit(
+                    self.replace_constraints,
+                    row.get("main_task_constraint", row.get("main_task", "")),
+                    row["constraints"],
+                    row["base_content"],
+                    False  # Don't log each individual sample
+                ): (idx, row)
+                for idx, row in merged.iterrows()
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_data):
+                idx, row = future_to_data[future]
+                instruction_num = row["instruction_number"]
+                main_task = row.get("main_task_constraint", row.get("main_task", ""))
+                original_constraints = row["constraints"]
+                base_content = row["base_content"]
+                
+                try:
+                    revised_task, revised_constraints, tokens = future.result()
+                    
+                    results.append({
+                        "instruction_number": instruction_num,
+                        "main_task": revised_task,
+                        "original_constraints": original_constraints,
+                        "revised_constraints": revised_constraints,
+                        "base_content": base_content,
+                        "model_used": self.model,
+                        "tokens_used": tokens,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    completed_count += 1
+                    self.logger.info(f"Completed sample #{instruction_num} ({completed_count}/{len(merged)}) - {tokens} tokens")
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to replace constraints for sample {instruction_num}: {e}")
+                    results.append({
+                        "instruction_number": instruction_num,
+                        "main_task": main_task,
+                        "original_constraints": original_constraints,
+                        "revised_constraints": "",
+                        "base_content": base_content,
+                        "model_used": self.model,
+                        "tokens_used": 0,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    completed_count += 1
+        
+        # Sort results by instruction_number
+        result_df = pd.DataFrame(results)
+        result_df = result_df.sort_values("instruction_number").reset_index(drop=True)
         
         if output_path:
             result_df.to_csv(output_path, index=False, encoding="utf-8")
