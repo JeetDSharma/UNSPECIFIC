@@ -7,6 +7,7 @@ import logging
 from time import sleep
 from typing import Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from cs4.core.prompts import get_common_constraint_generation_prompt
 from cs4.utils.llm_client import OpenAIClient, AnthropicClient
@@ -213,6 +214,95 @@ class CommonConstraintGenerator:
                 })
         
         result_df = pd.DataFrame(results)
+        
+        if output_path:
+            result_df.to_csv(output_path, index=False, encoding="utf-8")
+            self.logger.info(f"Common constraints saved to {output_path}")
+        
+        return result_df
+    
+    def generate_constraints_batch_parallel(
+        self,
+        df: pd.DataFrame,
+        blog1_column: str = "Blog A",
+        blog2_column: str = "Blog B",
+        output_path: Optional[str] = None,
+        max_workers: int = 5
+    ) -> pd.DataFrame:
+        """
+        Generate common constraints for a batch of blog pairs using parallel processing.
+        
+        Args:
+            df: Input DataFrame with blog pairs
+            blog1_column: Name of column containing first blog
+            blog2_column: Name of column containing second blog
+            output_path: Optional path to save results
+            max_workers: Maximum number of parallel workers (default: 5)
+            
+        Returns:
+            DataFrame with constraints
+        """
+        if blog1_column not in df.columns:
+            raise ValueError(f"Column '{blog1_column}' not found in DataFrame")
+        if blog2_column not in df.columns:
+            raise ValueError(f"Column '{blog2_column}' not found in DataFrame")
+        
+        self.logger.info(f"Processing {len(df)} blog pairs with {max_workers} parallel workers")
+        
+        results = []
+        completed_count = 0
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_data = {
+                executor.submit(
+                    self.generate_constraints_for_pair,
+                    row[blog1_column],
+                    row[blog2_column],
+                    False  # Don't log each individual pair
+                ): (idx, row)
+                for idx, row in df.iterrows()
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_data):
+                idx, row = future_to_data[future]
+                instruction_num = row.get("instruction_number", idx + 1)
+                
+                try:
+                    main_task, constraints, tokens = future.result()
+                    
+                    results.append({
+                        "instruction_number": instruction_num,
+                        "blog1": row[blog1_column],
+                        "blog2": row[blog2_column],
+                        "main_task": main_task,
+                        "constraints": constraints,
+                        "model_used": self.model,
+                        "tokens_used": tokens,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+                    completed_count += 1
+                    self.logger.info(f"Completed pair #{instruction_num} ({completed_count}/{len(df)}) - {tokens} tokens")
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to generate constraints for pair {instruction_num}: {e}")
+                    results.append({
+                        "instruction_number": instruction_num,
+                        "blog1": row[blog1_column],
+                        "blog2": row[blog2_column],
+                        "main_task": "",
+                        "constraints": "",
+                        "model_used": self.model,
+                        "tokens_used": 0,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    completed_count += 1
+        
+        # Sort results by instruction_number to maintain order
+        result_df = pd.DataFrame(results)
+        result_df = result_df.sort_values("instruction_number").reset_index(drop=True)
         
         if output_path:
             result_df.to_csv(output_path, index=False, encoding="utf-8")
