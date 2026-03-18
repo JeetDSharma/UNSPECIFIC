@@ -236,8 +236,7 @@ class BaseGenerator:
             # Merge to preserve all original columns from input df
             if has_instruction_num:
                 result_df = df.merge(
-                    base_df[["instruction_number", "base_content", "content_length", 
-                             "model_used", "tokens_used", "timestamp"]],
+                    base_df[["instruction_number", "base_content", "content_length"]],
                     on="instruction_number",
                     how="left"
                 )
@@ -246,9 +245,6 @@ class BaseGenerator:
                 result_df = df.copy()
                 result_df["base_content"] = base_df["base_content"].values
                 result_df["content_length"] = base_df["content_length"].values
-                result_df["model_used"] = base_df["model_used"].values
-                result_df["tokens_used"] = base_df["tokens_used"].values
-                result_df["timestamp"] = base_df["timestamp"].values
         
         if output_path:
             result_df.to_csv(output_path, index=False, encoding="utf-8")
@@ -360,8 +356,7 @@ class BaseGenerator:
             
             # Merge back to original df to replicate base content across all rows
             result_df = df.merge(
-                base_df[["instruction_number", "base_content", "content_length", 
-                         "model_used", "tokens_used", "timestamp"]],
+                base_df[["instruction_number", "base_content", "content_length"]],
                 on="instruction_number",
                 how="left"
             )
