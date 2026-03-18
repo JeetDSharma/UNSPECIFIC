@@ -62,6 +62,17 @@ def main():
         default="configs/logging_config.yaml",
         help="Path to logging config"
     )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Use parallel processing for faster execution"
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=5,
+        help="Maximum number of parallel workers (default: 5)"
+    )
     
     args = parser.parse_args()
     
@@ -74,6 +85,9 @@ def main():
     logger.info(f"Input: {args.input_path}")
     logger.info(f"Output: {args.output_path}")
     logger.info(f"Model: {args.model}")
+    logger.info(f"Processing mode: {'Parallel' if args.parallel else 'Sequential'}")
+    if args.parallel:
+        logger.info(f"Max workers: {args.max_workers}")
     
     # Load input data
     try:
@@ -103,11 +117,19 @@ def main():
     
     # Generate base content
     try:
-        result_df = generator.generate_batch(
-            df=df,
-            task_column=args.task_column,
-            output_path=args.output_path
-        )
+        if args.parallel:
+            result_df = generator.generate_batch_parallel(
+                df=df,
+                task_column=args.task_column,
+                output_path=args.output_path,
+                max_workers=args.max_workers
+            )
+        else:
+            result_df = generator.generate_batch(
+                df=df,
+                task_column=args.task_column,
+                output_path=args.output_path
+            )
         logger.info(f"Successfully generated base content for {len(result_df)} tasks")
         
         # Print usage summary

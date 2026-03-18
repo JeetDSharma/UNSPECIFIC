@@ -7,6 +7,7 @@ import logging
 from time import sleep
 from typing import Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from cs4.core.prompts import get_base_generation_prompt
 from cs4.utils.llm_client import OpenAIClient, AnthropicClient
@@ -231,6 +232,196 @@ class BaseGenerator:
                     })
             
             base_df = pd.DataFrame(base_results)
+            
+            # Merge to preserve all original columns from input df
+            if has_instruction_num:
+                result_df = df.merge(
+                    base_df[["instruction_number", "base_content", "content_length", 
+                             "model_used", "tokens_used", "timestamp"]],
+                    on="instruction_number",
+                    how="left"
+                )
+            else:
+                # If no instruction_number, add columns directly (assumes same order)
+                result_df = df.copy()
+                result_df["base_content"] = base_df["base_content"].values
+                result_df["content_length"] = base_df["content_length"].values
+                result_df["model_used"] = base_df["model_used"].values
+                result_df["tokens_used"] = base_df["tokens_used"].values
+                result_df["timestamp"] = base_df["timestamp"].values
+        
+        if output_path:
+            result_df.to_csv(output_path, index=False, encoding="utf-8")
+            self.logger.info(f"Base content saved to {output_path}")
+        
+        return result_df
+    
+    def generate_batch_parallel(
+        self,
+        df: pd.DataFrame,
+        task_column: str = "main_task",
+        output_path: Optional[str] = None,
+        deduplicate_by_instruction: bool = True,
+        max_workers: int = 5
+    ) -> pd.DataFrame:
+        """
+        Generate base content for a batch of tasks using parallel processing.
+        
+        Args:
+            df: Input DataFrame with tasks (typically from constraints.csv)
+            task_column: Name of column containing task descriptions
+            output_path: Optional path to save results
+            deduplicate_by_instruction: If True and instruction_number exists with duplicates,
+                                       generate base content once per unique instruction_number
+                                       and replicate across all rows (for expanded constraints)
+            max_workers: Maximum number of parallel workers (default: 5)
+            
+        Returns:
+            DataFrame with generated base content
+        """
+        if task_column not in df.columns:
+            raise ValueError(f"Column '{task_column}' not found in DataFrame")
+        
+        # Check if instruction_number exists
+        if "instruction_number" in df.columns:
+            has_instruction_num = True
+        else:
+            has_instruction_num = False
+            self.logger.warning("No 'instruction_number' column found, using index")
+        
+        # Check if deduplication is needed (expanded constraints with subset_size)
+        needs_deduplication = (
+            deduplicate_by_instruction and 
+            has_instruction_num and 
+            df["instruction_number"].duplicated().any()
+        )
+        
+        if needs_deduplication:
+            self.logger.info(f"Detected {df['instruction_number'].duplicated().sum()} duplicate instruction_numbers")
+            self.logger.info("Will generate base content once per unique instruction_number")
+            
+            # Get unique tasks by instruction_number
+            unique_df = df.drop_duplicates(subset=["instruction_number"]).copy()
+            self.logger.info(f"Generating base content for {len(unique_df)} unique tasks (from {len(df)} total rows) with {max_workers} parallel workers")
+            
+            # Generate for unique tasks in parallel
+            base_results = []
+            completed_count = 0
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_data = {
+                    executor.submit(
+                        self.generate_base_content,
+                        row[task_column],
+                        False  # Don't log each individual task
+                    ): (idx, row)
+                    for idx, row in unique_df.iterrows()
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_data):
+                    idx, row = future_to_data[future]
+                    instruction_num = row["instruction_number"]
+                    task = row[task_column]
+                    
+                    try:
+                        content, tokens = future.result()
+                        
+                        base_results.append({
+                            "instruction_number": instruction_num,
+                            "main_task": task,
+                            "base_content": content,
+                            "content_length": len(content),
+                            "model_used": self.model,
+                            "tokens_used": tokens,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        
+                        completed_count += 1
+                        self.logger.info(f"Completed task #{instruction_num} ({completed_count}/{len(unique_df)}) - {tokens} tokens")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Failed to generate base content for task {instruction_num}: {e}")
+                        base_results.append({
+                            "instruction_number": instruction_num,
+                            "main_task": task,
+                            "base_content": "",
+                            "content_length": 0,
+                            "model_used": self.model,
+                            "tokens_used": 0,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        completed_count += 1
+            
+            # Sort results by instruction_number
+            base_df = pd.DataFrame(base_results)
+            base_df = base_df.sort_values("instruction_number").reset_index(drop=True)
+            
+            # Merge back to original df to replicate base content across all rows
+            result_df = df.merge(
+                base_df[["instruction_number", "base_content", "content_length", 
+                         "model_used", "tokens_used", "timestamp"]],
+                on="instruction_number",
+                how="left"
+            )
+            
+            self.logger.info(f"Replicated base content across {len(result_df)} rows")
+            
+        else:
+            # Process all tasks in parallel
+            self.logger.info(f"Generating base content for {len(df)} tasks with {max_workers} parallel workers")
+            
+            base_results = []
+            completed_count = 0
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_data = {
+                    executor.submit(
+                        self.generate_base_content,
+                        row[task_column],
+                        False  # Don't log each individual task
+                    ): (idx, row)
+                    for idx, row in df.iterrows()
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_data):
+                    idx, row = future_to_data[future]
+                    instruction_num = row["instruction_number"] if has_instruction_num else idx + 1
+                    task = row[task_column]
+                    
+                    try:
+                        content, tokens = future.result()
+                        
+                        base_results.append({
+                            "instruction_number": instruction_num,
+                            "base_content": content,
+                            "content_length": len(content),
+                            "model_used": self.model,
+                            "tokens_used": tokens,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        
+                        completed_count += 1
+                        self.logger.info(f"Completed task #{instruction_num} ({completed_count}/{len(df)}) - {tokens} tokens")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Failed to generate base content for task {instruction_num}: {e}")
+                        base_results.append({
+                            "instruction_number": instruction_num,
+                            "base_content": "",
+                            "content_length": 0,
+                            "model_used": self.model,
+                            "tokens_used": 0,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        completed_count += 1
+            
+            # Sort results by instruction_number
+            base_df = pd.DataFrame(base_results)
+            base_df = base_df.sort_values("instruction_number").reset_index(drop=True)
             
             # Merge to preserve all original columns from input df
             if has_instruction_num:
