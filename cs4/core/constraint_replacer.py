@@ -136,7 +136,13 @@ class ConstraintReplacer:
         Returns:
             DataFrame with revised constraints
         """
-        merged = pd.merge(constraints_df, base_df, on="instruction_number", suffixes=("_constraint", "_base"))
+        # Only take the base_content column from base_df to avoid any column conflicts
+        merged = pd.merge(
+            constraints_df, 
+            base_df[["instruction_number", "base_content"]], 
+            on="instruction_number", 
+            how="left"
+        )
         
         self.logger.info(f"Replacing constraints for {len(merged)} samples")
         
@@ -144,9 +150,9 @@ class ConstraintReplacer:
         for idx, row in merged.iterrows():
             instruction_num = row["instruction_number"]
             
-            main_task = row.get("main_task_constraint", row.get("main_task", ""))
-            original_constraints = row["constraints"]
-            base_content = row["base_content"]
+            main_task = row.get("main_task", "")
+            original_constraints = row.get("constraints", "")
+            base_content = row.get("base_content", "")
             self.logger.info(f"Processing sample #{instruction_num}")
             
             try:
@@ -208,7 +214,13 @@ class ConstraintReplacer:
         Returns:
             DataFrame with revised constraints
         """
-        merged = pd.merge(constraints_df, base_df, on="instruction_number", suffixes=("_constraint", "_base"))
+        # Only take the base_content column from base_df to avoid any column conflicts
+        merged = pd.merge(
+            constraints_df, 
+            base_df[["instruction_number", "base_content"]], 
+            on="instruction_number", 
+            how="left"
+        )
         
         self.logger.info(f"Replacing constraints for {len(merged)} samples with {max_workers} parallel workers")
         
@@ -220,9 +232,9 @@ class ConstraintReplacer:
             future_to_data = {
                 executor.submit(
                     self.replace_constraints,
-                    row.get("main_task_constraint", row.get("main_task", "")),
-                    row["constraints"],
-                    row["base_content"],
+                    row.get("main_task", ""),
+                    row.get("constraints", ""),
+                    row.get("base_content", ""),
                     False  # Don't log each individual sample
                 ): (idx, row)
                 for idx, row in merged.iterrows()
@@ -232,9 +244,9 @@ class ConstraintReplacer:
             for future in as_completed(future_to_data):
                 idx, row = future_to_data[future]
                 instruction_num = row["instruction_number"]
-                main_task = row.get("main_task_constraint", row.get("main_task", ""))
-                original_constraints = row["constraints"]
-                base_content = row["base_content"]
+                main_task = row.get("main_task", "")
+                original_constraints = row.get("constraints", "")
+                base_content = row.get("base_content", "")
                 
                 try:
                     revised_task, revised_constraints, tokens = future.result()
