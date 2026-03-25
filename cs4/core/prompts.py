@@ -221,6 +221,30 @@ Generate the revised {content_type} that satisfies all constraints:
 """
 
 
+DIRECT_GENERATION_PROMPT = """You are a creative writing expert. I will give you:
+1. A task description
+2. A list of constraints to satisfy
+
+Your job is to generate a complete, high-quality {content_type} that fulfills the task and satisfies as many constraints as possible while maintaining natural flow and coherence. Restrict the length of output to 500 words.
+
+Instructions:
+- Generate engaging, creative content that directly addresses the task
+- Integrate constraints seamlessly where they fit naturally
+- Prioritize natural flow, readability, and quality over satisfying every single constraint
+- Maintain a natural, engaging writing style
+- Ensure the content flows logically and feels complete
+- Do not mention the constraints explicitly in the content
+- The final output should feel polished and professional
+
+Task: {task}
+
+Constraints to satisfy:
+{constraints}
+
+Generate the {content_type}:
+"""
+
+
 # EVALUATION_PROMPT = """You are an expert reader. I will give you a story followed by a set of constraints.
 # Your task is to carefully read both of them and tell how many constraints are being satisfied in the story.
 # As the output, I want you to print yes/no for each constraint based on whether it is being satisfied or not, followed by a 1 line explanation of why it is being satisfied/violated.
@@ -963,6 +987,19 @@ def get_constraint_replacement_with_eval_prompt(
         original_constraints=original_constraints,
         base_content=base_content,
         satisfaction_results=satisfaction_results
+    )
+
+
+def get_direct_generation_prompt(
+    content_type: str,
+    task: str,
+    constraints: str
+) -> str:
+    """Get the direct generation prompt for creating content from task and constraints."""
+    return DIRECT_GENERATION_PROMPT.format(
+        content_type=content_type,
+        task=task,
+        constraints=constraints
     )
 
 # criticize grammar and coherence
