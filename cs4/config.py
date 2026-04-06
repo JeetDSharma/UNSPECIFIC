@@ -26,6 +26,7 @@ class Config:
     # API Keys
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+    TOGETHERAI_API_KEY = os.getenv("TOGETHERAI_API_KEY")
     
     # Default models per task - single source of truth for each pipeline stage
     DEFAULT_MERGE_MODEL = "gpt-4.1-mini"           # Blog merging
@@ -86,6 +87,8 @@ class Config:
             return cls.OPENAI_API_KEY
         elif provider.lower() in ("anthropic", "claude"):
             return cls.CLAUDE_API_KEY
+        elif provider.lower() in ("together", "togetherai"):
+            return cls.TOGETHERAI_API_KEY
         else:
             raise ValueError(f"Unknown provider: {provider}")
     

@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 from cs4.core.direct_generator import DirectGenerator
-from cs4.utils.llm_client import OpenAIClient, AnthropicClient, get_total_usage
+from cs4.utils.llm_client import OpenAIClient, AnthropicClient, TogetherAIClient, get_total_usage
 from cs4.utils.log_utils import setup_logging, get_logger
 from cs4.config import Config
 
@@ -54,7 +54,7 @@ def main():
     )
     parser.add_argument(
         "--provider",
-        choices=["openai", "anthropic"],
+        choices=["openai", "anthropic", "together"],
         default="openai",
         help="LLM provider"
     )
@@ -113,8 +113,13 @@ def main():
     try:
         if args.provider == "openai":
             client = OpenAIClient(log_usage=True)
-        else:
+        elif args.provider == "anthropic":
             client = AnthropicClient(log_usage=True)
+        elif args.provider == "together":
+            client = TogetherAIClient(log_usage=True)
+        else:
+            logger.error(f"Unknown provider: {args.provider}")
+            sys.exit(1)
     except Exception as e:
         logger.error(f"Failed to initialize LLM client: {e}")
         sys.exit(1)

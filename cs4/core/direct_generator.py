@@ -10,7 +10,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from cs4.core.prompts import get_direct_generation_prompt
-from cs4.utils.llm_client import OpenAIClient, AnthropicClient
+from cs4.utils.llm_client import OpenAIClient, AnthropicClient, TogetherAIClient
 from cs4.config import Config
 
 
@@ -83,6 +83,19 @@ class DirectGenerator:
                     )
                     content = response.content[0].text
                     tokens = response.usage.input_tokens + response.usage.output_tokens
+                elif isinstance(self.llm_client, TogetherAIClient):
+                    response = self.llm_client.chat_completion(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=self.model,
+                    )
+                    message = response.choices[0].message
+                    content = message.content.strip() if message.content else ""
+                    
+                    # Some models (like Qwen reasoning models) output to 'reasoning' field
+                    if not content and hasattr(message, 'reasoning') and message.reasoning:
+                        content = message.reasoning.strip()
+                    
+                    tokens = response.usage.total_tokens
                 else:
                     raise ValueError("Unknown client type")
                 

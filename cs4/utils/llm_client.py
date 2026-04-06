@@ -9,6 +9,7 @@ from pathlib import Path
 
 from openai import OpenAI
 from anthropic import Anthropic
+from together import Together
 
 from cs4.config import Config
 
@@ -179,6 +180,75 @@ class AnthropicClient:
             messages=messages,
             model=model,
             system=system_prompt,
+            **kwargs
+        )
+        return self.get_response_text(response)
+
+
+class TogetherAIClient:
+    """Wrapper for Together.ai API with usage tracking."""
+    
+    def __init__(self, api_key: Optional[str] = None, log_usage: bool = True):
+        self.api_key = api_key or Config.get_api_key("together")
+        if not self.api_key:
+            raise ValueError("Together.ai API key not provided")
+        
+        self.client = Together(api_key=self.api_key)
+        self.log_usage = log_usage
+    
+    def chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = None,
+        **kwargs
+    ) -> Any:
+        """Create a chat completion."""
+        if model is None:
+            model = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
+        
+        response = self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **kwargs
+        )
+        
+        if self.log_usage:
+            UsageTracker.log_usage(
+                provider="together",
+                model=model,
+                tokens=response.usage.total_tokens,
+                metadata={"prompt_tokens": response.usage.prompt_tokens,
+                         "completion_tokens": response.usage.completion_tokens}
+            )
+        
+        return response
+    
+    def get_response_text(self, response: Any) -> str:
+        """Extract text from response."""
+        message = response.choices[0].message
+        content = message.content.strip() if message.content else ""
+        
+        # Some models (like Qwen reasoning models) output to 'reasoning' field
+        if not content and hasattr(message, 'reasoning') and message.reasoning:
+            content = message.reasoning.strip()
+        
+        return content
+    
+    def chat(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model: str = None,
+        **kwargs
+    ) -> str:
+        """Simplified chat interface."""
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ]
+        response = self.chat_completion(
+            messages=messages,
+            model=model,
             **kwargs
         )
         return self.get_response_text(response)
