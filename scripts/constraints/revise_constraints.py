@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
 from cs4.core.constraint_replacer import ConstraintReplacer
@@ -68,6 +68,11 @@ def main():
         default=5,
         help="Maximum number of parallel workers (default: 5)"
     )
+    parser.add_argument(
+        "--content-column",
+        default="base_content",
+        help="Name of the content column in base CSV (default: base_content)"
+    )
     
     args = parser.parse_args()
     
@@ -86,6 +91,11 @@ def main():
     try:
         constraints_df = pd.read_csv(args.constraints_path, encoding="utf-8")
         base_df = pd.read_csv(args.base_path, encoding="utf-8")
+        
+        # Rename content column to base_content if needed
+        if args.content_column != "base_content" and args.content_column in base_df.columns:
+            base_df = base_df.rename(columns={args.content_column: "base_content"})
+        
         logger.info(f"Loaded {len(constraints_df)} samples")
     except Exception as e:
         logger.error(f"Failed to load input files: {e}")
