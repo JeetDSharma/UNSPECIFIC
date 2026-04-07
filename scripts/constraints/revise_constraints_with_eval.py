@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
 from cs4.core.constraint_replacer import ConstraintReplacer
@@ -77,8 +77,7 @@ def main():
     
     logger.info("Starting constraint replacement with evaluation results")
     logger.info(f"Constraints: {args.constraints_path}")
-    logger.info(f"Base content: {args.base_path}")
-    logger.info(f"Evaluation results: {args.eval_path}")
+    logger.info(f"Base content with eval: {args.base_path}")
     logger.info(f"Output: {args.output_path}")
     logger.info(f"Processing mode: {'Parallel' if args.parallel else 'Sequential'}")
     if args.parallel:
@@ -87,7 +86,6 @@ def main():
     try:
         constraints_df = pd.read_csv(args.constraints_path, encoding="utf-8")
         base_df = pd.read_csv(args.base_path, encoding="utf-8")
-        eval_df = pd.read_csv(args.eval_path, encoding="utf-8")
         logger.info(f"Loaded {len(constraints_df)} samples")
     except Exception as e:
         logger.error(f"Failed to load input files: {e}")
