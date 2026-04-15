@@ -291,6 +291,69 @@ def find_similar_pairs_distinct(
     return pairs
 
 
+def cosine_similarity_pairs(
+    texts_a,
+    texts_b,
+    model_name: str = "all-mpnet-base-v2",
+):
+    """
+    Per-row cosine similarity between two aligned lists of strings using
+    SentenceTransformer embeddings (L2-normalized, dot product).
+
+    Args:
+        texts_a: Reference texts (e.g. base story), same length as texts_b
+        texts_b: Response texts (e.g. direct generation)
+        model_name: sentence-transformers model id
+
+    Returns:
+        1D numpy array of shape (n,) with values in [-1, 1], or np.nan where
+        either side of the pair is empty/whitespace-only after strip.
+
+    Raises:
+        ValueError: if lengths differ
+    """
+    if len(texts_a) != len(texts_b):
+        raise ValueError(
+            f"texts_a and texts_b must have the same length "
+            f"({len(texts_a)} vs {len(texts_b)})"
+        )
+    n = len(texts_a)
+    if n == 0:
+        return np.array([], dtype=np.float64)
+
+    empty_mask = np.zeros(n, dtype=bool)
+    safe_a = []
+    safe_b = []
+    placeholder = " "
+    for i in range(n):
+        a = (texts_a[i] or "").strip()
+        b = (texts_b[i] or "").strip()
+        if not a or not b:
+            empty_mask[i] = True
+            safe_a.append(placeholder)
+            safe_b.append(placeholder)
+        else:
+            safe_a.append(a)
+            safe_b.append(b)
+
+    model = SentenceTransformer(model_name)
+    emb_a = model.encode(
+        safe_a,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+    emb_b = model.encode(
+        safe_b,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+    sims = np.sum(emb_a * emb_b, axis=1).astype(np.float64)
+    sims[empty_mask] = np.nan
+    return sims
+
+
 def save_pairs_to_csv(pairs, output_path):
     """Save pairs to CSV file without pandas"""
     import csv
