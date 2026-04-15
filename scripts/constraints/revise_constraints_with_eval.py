@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import pandas as pd
-from cs4.core.constraint_replacer import ConstraintReplacer
+from cs4.core.constraint_replacer_with_eval import ConstraintReplacerWithEval
 from cs4.utils.llm_client import OpenAIClient, AnthropicClient, get_total_usage
 from cs4.utils.log_utils import setup_logging, get_logger
 from cs4.config import Config
@@ -28,7 +28,12 @@ def main():
     parser.add_argument(
         "--base-path",
         required=True,
-        help="Path to base generated content CSV"
+        help="Path to base generated content CSV (must include base_content, instruction_number)"
+    )
+    parser.add_argument(
+        "--eval-path",
+        required=True,
+        help="Path to base evaluation CSV (must include satisfaction_results, instruction_number)"
     )
     parser.add_argument(
         "--output-path",
@@ -77,7 +82,8 @@ def main():
     
     logger.info("Starting constraint replacement with evaluation results")
     logger.info(f"Constraints: {args.constraints_path}")
-    logger.info(f"Base content with eval: {args.base_path}")
+    logger.info(f"Base content: {args.base_path}")
+    logger.info(f"Base evaluation: {args.eval_path}")
     logger.info(f"Output: {args.output_path}")
     logger.info(f"Processing mode: {'Parallel' if args.parallel else 'Sequential'}")
     if args.parallel:
@@ -86,6 +92,14 @@ def main():
     try:
         constraints_df = pd.read_csv(args.constraints_path, encoding="utf-8")
         base_df = pd.read_csv(args.base_path, encoding="utf-8")
+        eval_df = pd.read_csv(args.eval_path, encoding="utf-8")
+        for name, df, col in (
+            ("base", base_df, "base_content"),
+            ("eval", eval_df, "satisfaction_results"),
+        ):
+            if col not in df.columns:
+                logger.error(f"{name} CSV missing required column: {col}")
+                sys.exit(1)
         logger.info(f"Loaded {len(constraints_df)} samples")
     except Exception as e:
         logger.error(f"Failed to load input files: {e}")
@@ -100,7 +114,7 @@ def main():
         logger.error(f"Failed to initialize LLM client: {e}")
         sys.exit(1)
     
-    replacer = ConstraintReplacer(
+    replacer = ConstraintReplacerWithEval(
         llm_client=client,
         model=args.model,
         retry_attempts=args.retry_attempts
@@ -111,14 +125,17 @@ def main():
             result_df = replacer.replace_batch_parallel(
                 constraints_df=constraints_df,
                 base_df=base_df,
+                eval_df=eval_df,
                 output_path=args.output_path,
                 max_workers=args.max_workers
             )
         else:
-            result_df = replacer.replace_batch(
+            result_df = replacer.replace_batch_parallel(
                 constraints_df=constraints_df,
                 base_df=base_df,
-                output_path=args.output_path
+                eval_df=eval_df,
+                output_path=args.output_path,
+                max_workers=1
             )
         logger.info(f"Successfully replaced constraints for {len(result_df)} samples")
         
