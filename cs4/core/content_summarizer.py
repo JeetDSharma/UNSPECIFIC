@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 from datetime import datetime
 
 from cs4.core.prompts import get_summarization_prompt
-from cs4.utils.llm_client import OpenAIClient, AnthropicClient, UsageTracker
+from cs4.utils.llm_client import OpenAIClient, AnthropicClient, TogetherAIClient, UsageTracker
 from cs4.config import Config
 
 
@@ -76,6 +76,13 @@ class ContentSummarizer:
                         model=self.model
                     )
                     summarized = response.choices[0].message.content.strip()
+                    tokens = response.usage.total_tokens
+                elif isinstance(self.llm_client, TogetherAIClient):
+                    response = self.llm_client.chat_completion(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=self.model
+                    )
+                    summarized = self.llm_client.get_response_text(response)
                     tokens = response.usage.total_tokens
                 else:  # Anthropic
                     response = self.llm_client.create_message(

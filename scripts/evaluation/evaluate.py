@@ -70,7 +70,30 @@ def main():
         default="configs/logging_config.yaml",
         help="Path to logging config"
     )
-    
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Evaluate samples concurrently (faster). Halts on fatal API errors."
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=5,
+        help="Max concurrent eval workers when --parallel (default: 5)"
+    )
+    parser.add_argument(
+        "--terse",
+        action="store_true",
+        help="Use the terse eval prompt: bare 'i. Yes'/'i. No' per constraint, "
+             "no quotes/explanations (A/B against the verbose benchmark)."
+    )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Submit as an async Anthropic Message Batch (~50%% cheaper, up to 24h). "
+             "Anthropic provider only."
+    )
+
     args = parser.parse_args()
     
     # Setup logging
@@ -106,17 +129,37 @@ def main():
         llm_client=client,
         model=args.model,
         content_type=args.domain,
-        retry_attempts=args.retry_attempts
+        retry_attempts=args.retry_attempts,
+        terse=args.terse
     )
     
     # Evaluate
     try:
-        result_df = evaluator.evaluate_batch(
-            df=df,
-            content_column=args.content_column,
-            constraints_column=args.constraints_column,
-            output_path=args.output_path
-        )
+        if args.batch:
+            if args.provider != "anthropic":
+                logger.error("--batch is supported only for the Anthropic provider")
+                sys.exit(1)
+            result_df = evaluator.evaluate_batch_anthropic(
+                df=df,
+                content_column=args.content_column,
+                constraints_column=args.constraints_column,
+                output_path=args.output_path,
+            )
+        elif args.parallel:
+            result_df = evaluator.evaluate_batch_parallel(
+                df=df,
+                content_column=args.content_column,
+                constraints_column=args.constraints_column,
+                output_path=args.output_path,
+                max_workers=args.max_workers,
+            )
+        else:
+            result_df = evaluator.evaluate_batch(
+                df=df,
+                content_column=args.content_column,
+                constraints_column=args.constraints_column,
+                output_path=args.output_path
+            )
         logger.info(f"Successfully evaluated {len(result_df)} samples")
         
         # Print statistics

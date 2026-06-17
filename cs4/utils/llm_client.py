@@ -115,6 +115,44 @@ class OpenAIClient:
         )
         return self.get_response_text(response)
 
+    # --- Batch API (async, ~50% cheaper) -----------------------------------
+    def create_batch(self, requests, endpoint: str = "/v1/chat/completions",
+                     completion_window: str = "24h"):
+        """Upload a JSONL of chat-completion requests and create a batch.
+
+        `requests` is a list of dicts: {"custom_id": str, "body": {...}} where body
+        is a /v1/chat/completions request payload (model, messages, ...).
+        Returns the created batch object.
+        """
+        import json
+        lines = []
+        for r in requests:
+            lines.append(json.dumps({
+                "custom_id": r["custom_id"],
+                "method": "POST",
+                "url": endpoint,
+                "body": r["body"],
+            }))
+        data = ("\n".join(lines) + "\n").encode("utf-8")
+        up = self.client.files.create(file=("batch_input.jsonl", data), purpose="batch")
+        return self.client.batches.create(
+            input_file_id=up.id, endpoint=endpoint, completion_window=completion_window
+        )
+
+    def retrieve_batch(self, batch_id: str):
+        return self.client.batches.retrieve(batch_id)
+
+    def batch_results(self, batch):
+        """Yield parsed result objects (dicts) from a completed batch's output file."""
+        import json
+        out_id = getattr(batch, "output_file_id", None)
+        if not out_id:
+            return
+        text = self.client.files.content(out_id).text
+        for line in text.splitlines():
+            if line.strip():
+                yield json.loads(line)
+
 
 class AnthropicClient:
     """Wrapper for Anthropic API with usage tracking."""
@@ -183,6 +221,18 @@ class AnthropicClient:
             **kwargs
         )
         return self.get_response_text(response)
+
+    # --- Message Batches API (async, ~50% cheaper) -------------------------
+    def create_batch(self, requests):
+        """Submit a list of anthropic batch Request objects."""
+        return self.client.messages.batches.create(requests=requests)
+
+    def retrieve_batch(self, batch_id: str):
+        return self.client.messages.batches.retrieve(batch_id)
+
+    def batch_results(self, batch_id: str):
+        """Iterator over per-request results."""
+        return self.client.messages.batches.results(batch_id)
 
 
 class TogetherAIClient:

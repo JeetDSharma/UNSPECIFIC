@@ -772,13 +772,70 @@ def get_constraint_fitting_prompt(
     )
 
 
+EVALUATION_PROMPT_TERSE = """
+You are a strict constraint evaluator.
+
+You will be given:
+1. Content (a story or blog)
+2. A numbered list of constraints
+
+Your task:
+Evaluate each constraint independently and determine whether it is fully satisfied by the content.
+
+CRITICAL INDEX RULE (MANDATORY):
+Each output line i MUST evaluate ONLY constraint i.
+Do not merge, skip, combine, or split constraints.
+Even if multiple constraints appear similar, each MUST receive its own line.
+
+OUTPUT RULES (MANDATORY):
+1. Output EXACTLY one line per constraint, in numeric order.
+2. Each line MUST be EXACTLY one of these two formats, with NOTHING else:
+       i. Yes
+       i. No
+3. Do NOT output quotes, reasons, explanations, headers, summaries, or blank lines.
+4. Mark "Yes" ONLY if the constraint is explicitly and completely satisfied.
+   - Partial satisfaction = No
+   - Inference, implication, or interpretation = No
+   - If uncertain, mark No
+
+EVALUATION RULES:
+- Semantic constraints must be clearly stated in the content.
+- Do not stretch meanings or combine multiple moments to satisfy one constraint.
+
+WORD COUNT RULES:
+- "less than N words" -> Yes only if word_count < N
+- "about N words" or "approximately N words" -> Yes only if word_count is within +/-10 percent of N
+
+FINAL COUNT:
+After all constraint lines, output exactly:
+Number of constraints satisfied: X
+X MUST equal the number of lines marked "Yes" above. Silently recount before printing X.
+
+Now evaluate:
+
+{content_type_capitalized}:
+{content}
+
+Constraints:
+{constraints}
+
+Output:
+"""
+
+
 def get_evaluation_prompt(
     content_type: str,
     content: str,
-    constraints: str
+    constraints: str,
+    terse: bool = False
 ) -> str:
-    """Get the evaluation prompt."""
-    return EVALUATION_PROMPT.format(
+    """Get the evaluation prompt.
+
+    terse=True swaps per-constraint output to bare 'i. Yes'/'i. No' (no quote/
+    reason). Used to A/B-test whether the explanations change the verdicts.
+    """
+    template = EVALUATION_PROMPT_TERSE if terse else EVALUATION_PROMPT
+    return template.format(
         content_type=content_type,
         content_type_capitalized=content_type.capitalize(),
         content=content,
@@ -1058,7 +1115,11 @@ For each metric:
 After evaluating both metrics, assign an overall winner (A or B) based on the category wins.
  
 IMPORTANT: Follow the exact format shown in the example below. Do not add extra text.
- 
+Use PLAIN TEXT only - do NOT use any markdown formatting (no **bold**, no ## headers,
+no bullet points or code fences). Reproduce the exact line format from the example,
+e.g. `A - 2/5`, `B - 4/5`, `Preference: B`, and a final `Overall Winner: B` line with
+the letter on the same line as the colon.
+
 ---
  
 **Example:**
