@@ -15,7 +15,7 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 
-def read_texts(file_path, max_size, min_words=None, max_words=None):
+def read_texts(file_path, max_size, min_words=None, max_words=None, text_column="text"):
     """Read texts from CSV file with optional word count filtering"""
     csv.field_size_limit(sys.maxsize)
     
@@ -24,7 +24,7 @@ def read_texts(file_path, max_size, min_words=None, max_words=None):
     with open(file_path, encoding='utf8') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            txt = row.get("text", "").strip()
+            txt = row.get(text_column, "").strip()
             if txt:
                 # Apply word count filtering if specified
                 if min_words is not None or max_words is not None:
@@ -49,6 +49,11 @@ def read_texts(file_path, max_size, min_words=None, max_words=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--blog_csv", required=True, help="Path to blog CSV file")
+    ap.add_argument(
+        "--text_column",
+        default="text",
+        help="CSV column with article body (default: text; use e.g. content for news)",
+    )
     ap.add_argument("--max_size", type=int, default=10000, help="Maximum blogs to process")
     ap.add_argument("--min_words", type=int, help="Minimum word count filter")
     ap.add_argument("--max_words", type=int, help="Maximum word count filter")
@@ -71,8 +76,9 @@ def main():
     if args.min_words or args.max_words:
         print(f"Word count filter: min={args.min_words}, max={args.max_words}")
 
-    # Build cache filename
-    cache_filename = f'embeddings-{args.model.replace("/", "_")}-size-{args.max_size}'
+    # Build cache filename (include text column so different columns do not share cache)
+    col_tag = args.text_column.replace("/", "_")
+    cache_filename = f'embeddings-{args.model.replace("/", "_")}-col-{col_tag}-size-{args.max_size}'
     if args.min_words is not None:
         cache_filename += f'-min{args.min_words}'
     if args.max_words is not None:
@@ -89,7 +95,9 @@ def main():
         model = SentenceTransformer(args.model)
         
         # Read texts
-        corpus_sentences = read_texts(args.blog_csv, args.max_size, args.min_words, args.max_words)
+        corpus_sentences = read_texts(
+            args.blog_csv, args.max_size, args.min_words, args.max_words, args.text_column
+        )
         
         # Generate embeddings
         corpus_embeddings = model.encode(
