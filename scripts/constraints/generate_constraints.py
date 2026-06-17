@@ -68,7 +68,13 @@ def main():
         default="configs/logging_config.yaml",
         help="Path to logging config"
     )
-    
+    parser.add_argument(
+        "--extra-instruction",
+        default="",
+        help="Optional text appended to the constraint-generation system prompt "
+             "(e.g. an instruction to make constraints more general). Empty = no change."
+    )
+
     args = parser.parse_args()
     
     # Setup logging
@@ -103,6 +109,16 @@ def main():
         retry_attempts=args.retry_attempts,
         delay=args.delay
     )
+
+    # Optionally append an extra instruction to the system prompt (e.g. "make
+    # constraints more general"). Leaves the shared prompt file untouched.
+    if args.extra_instruction.strip():
+        generator.system_prompt = (
+            generator.system_prompt.rstrip()
+            + "\n\nADDITIONAL INSTRUCTION:\n"
+            + args.extra_instruction.strip()
+        )
+        logger.info(f"Appended extra instruction to system prompt: {args.extra_instruction.strip()[:120]}")
     
     # Generate constraints
     try:
