@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pandas as pd
 
 from cs4.core.content_summarizer import ContentSummarizer
-from cs4.utils.llm_client import OpenAIClient, AnthropicClient, get_total_usage
+from cs4.utils.llm_client import OpenAIClient, AnthropicClient, TogetherAIClient, get_total_usage
 from cs4.utils.log_utils import setup_logging, get_logger
 from cs4.config import Config
 
@@ -56,7 +56,7 @@ def main():
     )
     parser.add_argument(
         "--provider",
-        choices=["openai", "anthropic"],
+        choices=["openai", "anthropic", "together"],
         default="openai",
         help="LLM provider"
     )
@@ -96,6 +96,8 @@ def main():
     # Initialize LLM client
     if args.provider == "openai":
         client = OpenAIClient(log_usage=True)
+    elif args.provider == "together":
+        client = TogetherAIClient(log_usage=True)
     else:
         client = AnthropicClient(log_usage=True)
     
